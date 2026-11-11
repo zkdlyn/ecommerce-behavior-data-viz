@@ -1,6 +1,6 @@
 # E-Commerce User Behavior Analysis: Engagement, Cart Abandonment & User Personas
 
-An end-to-end analytics project using PowerQuery and PowerBI to analyze 27M+ shopping events from a multi-category online store (October 2019).
+An end-to-end analytics project using PowerQuery and PowerBI to analyze 28M+ shopping events from a multi-category online store (October 2019).
 
 ## Table of Contents
 - Business Problem
@@ -77,3 +77,80 @@ Source: [eCommerce behavior data from multi-category store](https://www.kaggle.c
 - Split `event_time` into separate date and time columns and set the correct data types.
 - Split `category_code` into three levels and kept the top level for simplicity (e.g. appliances.kitchen.microwave and appliances.environment.water_heater both become appliances).
 - Removed the original `category_id` and generated new unique IDs for the simplified categories.
+- Dropped rows with a null `category_code` (~32% of the original data), leaving 28,933,155 of events. Category is central to the persona analysis, so uncategorized events could not support those findings. Due to hardware limitations, working with the full dataset in Power BI was also impractical, so this reduction made the data manageable. Results therefore reflect categorized activity only (see [Limitations](#limitations)).
+
+### 2. Data Modeling (Snowflake Schema)
+The cleaned data was normalized was then normalized into a snowflake schema eith `Event` as the fact table.
+
+**Data Model**
+<div align = center>
+
+![Data Model](/images/data-model.jpg)
+</div>
+
+| Table |	Columns |
+| --- | --- |
+| Event (fact)	| time_id, date_id, event_type, product_id, session_id
+| Product	| product_id, product_code, price, category_id, brand_id
+| Category | category_id, category_name
+| Brand	| brand_id, brand_name
+| User | user_id, num_sessions, num_carts, num_purchases, spending_segment, activity_segment, abandonment_rate, avg_duration
+| Session	| session_id, duration_secs, duration_mins, num_events
+| Time | time_id, time, hour
+| Date | date_id, date, day_name, day_order |
+
+> **Relationships**: Event links to Time (time_id), Date (date_id), Session (session_id), and Product (product_id). Product links to Brand (brand_id) and Category (category_id).
+
+>Calculated columns (hour, day_name, duration, etc.) were added with DAX in preparation for analysis.
+
+### 3. DAX Measures
+
+## DAX Measures
+
+| Measure | Definition | DAX |
+| --- | --- | --- |
+| Total Views | Count of view events | `CALCULATE(COUNTROWS('events'), 'events'[event_type] = "view")` |
+| Total Cart | Count of cart events | `CALCULATE(COUNTROWS('events'), 'events'[event_type] = "cart")` |
+| Total Purchases | Count of purchase events | `CALCULATE(COUNTROWS('events'), 'events'[event_type] = "purchase")` |
+| Total Spending | Sum of prices of purchased products | `SUMX(FILTER('events', 'events'[event_type] = "purchase"), RELATED('product'[price]))` |
+| Abandonment Rate | Share of cart additions that did not result in a purchase | `1 - [Total Purchases] / [Total Cart]` |
+| Avg Views per Day | Average daily views | `DIVIDE([Total Views], DISTINCTCOUNT('date'[date]))` |
+| Avg Num Events | Average events per session | `AVERAGE('session'[num_events])` |
+| Avg Session Duration | Average session length (minutes) | `AVERAGE('session'[duration (mins)])` |
+| Avg Duration per User | Average of per-user average duration | `AVERAGE('user'[avg_user_duration])` |
+| Avg Num of Sessions | Average sessions per user | `AVERAGE('user'[Num of Sessions])` |
+| Total Users | Count of unique users | `COUNTROWS('user')` |
+
+### 4. Dashboards
+
+
+## User Personas
+Three personas emerged from the activity, spending, and category data.
+
+| | Tech Enthusiast | Window Shopper | Casual/One-Time Shopper |
+| --- | --- | --- | --- |
+| Who they are | Customers who mostly engage with Electronics category | Heavy browsers who add to cart but rarely buy | Users with few sessions who explore or compare prices |
+| Evidence | Electronics account for 74.29% of all the purchases made; Top buyers belong here; prefer Samsung and Apple; major revenue contributors | Non-spenders comprise 88.93% of users; average 98.27% cart abandonment per non-spending users; most high activity users (>15 sessions) don't purchase | Fewer than 5 sessions; 81.77% never purchase; highest per-user abandonment among segments ( 47.99%) |
+| Likely behavior | Brand-driven, repeat buyers | May wait for discounts or sales | Visiting once to explore or compare prices |
+
+## Recommendations
+
+Tech Enthusiasts: 
+
+- Offer electronics-exclusive deals and bundles.
+- Prioritize Samsung and Apple in inventory planning to avoid stockouts.
+- Provide early access to new launches and limited-time deals.
+
+Window Shoppers: 
+
+- Send price-drop alerts for items in their carts.
+- Run flash sales and limited-time offers to create urgency.
+- Use push notifications (app, SMS, email) for abandoned-cart reminders.
+
+Casual / One-Time Shoppers:
+
+- Add limited-time offers to encourage return visits.
+- Offer incentives (discounts, free shipping, freebies) for first-time and returning users.
+- Launch a loyalty rewards program to drive re-engagement.
+
+## Limitations
